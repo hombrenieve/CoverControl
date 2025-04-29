@@ -115,14 +115,18 @@ impl MqttEventHandler {
         }
     }
 
-    pub fn subscribe_to_topics(&self) -> mqtt::Result<mqtt::ServerResponse>{
+    pub fn initialize(&self) -> mqtt::Result<mqtt::ServerResponse>{
         let qos = [1; 3];
         let topics = [
-            MqttTopics::SWITCH_OPEN_STATUS,
-            MqttTopics::SWITCH_CLOSE_STATUS
+            MqttTopics::SWITCH_OPEN_STATE,
+            MqttTopics::SWITCH_CLOSE_STATE,
+            MqttTopics::COVER_STATE,
         ];
         return self.client.subscribe_many(&topics, &qos);
     }
+
+
+
     pub fn process_message(&self, topic: &str, payload: &[u8]) {
        self.state.process_message(self, topic, payload);
     }
@@ -173,6 +177,6 @@ mod tests {
         event_handler.process_message("some_topic", "some_payload".as_bytes());
         let published = mock_client.published.lock().unwrap(); 
         assert_eq!(published.len(), 1);
-        assert_eq!(published[0], ("cover_command".to_string(), "close".to_string()));
+        assert_eq!(published[0], (MqttTopics::COVER_COMMAND.to_string(), "close".to_string()));
     }
 }
