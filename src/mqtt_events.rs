@@ -1,15 +1,34 @@
 use crate::mqtt_topics::MqttTopics;
 
-use paho_mqtt as mqtt;
+use paho_mqtt::{self as mqtt, message::Message};
+use paho_mqtt::DeliveryToken;
 
+pub trait Client {
+    fn publish(&self, msg: mqtt::Message) -> mqtt::Result<mqtt::DeliveryToken>;
+    fn subscribe_many(&self, topics: &[&str], qos: &[u8]) -> mqtt::Result<mqtt::ServerResponse>;
+}
+
+impl Client for mqtt::Client{
+    fn publish(&self, msg: Message) -> mqtt::Result<DeliveryToken> {
+        let msg_clone = msg.clone();
+        mqtt::Client::publish(self, msg_clone)?;
+        Ok(DeliveryToken::new(msg))
+    }
+    fn subscribe_many(&self, topics: &[&str], qos: &[u8]) -> mqtt::Result<mqtt::ServerResponse>{
+        //we need to convert u8 to i32
+        let qos_i32: Vec<i32> = qos.iter().map(|&x| x as i32).collect();
+        return mqtt::Client::subscribe_many(self, topics, qos_i32.as_slice());
+    }
+}
 pub struct MqttEventHandler {
-    pub client: mqtt::Client,
+    pub client: Box<dyn Client>,
     state: StateEnum,
 }
 
 pub trait State {
     fn process_message(&self, event_handler: &MqttEventHandler, topic: &str, payload: &[u8]);
 }
+// We can simplify this and remove the unused states
 
 pub enum StateEnum {
    Open(OpenState),
@@ -85,41 +104,70 @@ impl State for ClosingState {
     }
 }
 
-    
-use std::time::Duration;
+
 
 impl MqttEventHandler {
-    pub fn new() -> Self {
-        // Create a client for the mqtt protocol.
-        let create_opts = mqtt::CreateOptionsBuilder::new()
-            .server_uri("tcp://localhost:1883")
-            .client_id("my_rust_client")
-            .finalize();
-
-        let client = mqtt::Client::new(create_opts).unwrap();
-
-        let lwt = mqtt::Message::new("test", "Good bye", 1);
-
-        let conn_opts = mqtt::ConnectOptionsBuilder::new()
-            .keep_alive_interval(Duration::from_secs(20))
-            .will_message(lwt).finalize();
-        client.connect(conn_opts).unwrap();
+    
+    pub fn new(client: Box<dyn Client>)-> Self {
         MqttEventHandler {
             client,
             state: StateEnum::Close(CloseState),
         }
     }
 
-    pub fn subscribe_to_topics(&self, topics: &[&str]) {
+    pub fn subscribe_to_topics(&self, topics: &[&str]) -> mqtt::Result<mqtt::ServerResponse>{
         let qos = [1; 3];
-        self.client.subscribe_many(&topics, &qos).unwrap();
+        return self.client.subscribe_many(&topics, &qos);
     }
-
     pub fn process_message(&self, topic: &str, payload: &[u8]) {
        self.state.process_message(self, topic, payload);
     }
 
     pub fn change_state(&mut self, new_state: StateEnum) {
         self.state = new_state;
+    }
+}
+
+// Test module, now in this same file
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    // Struct to mock the mqtt::Client
+    #[derive(Clone)]    struct MockClient {
+        // Use mutex to share the published field
+        published: Arc<Mutex<Vec<(String, String)>>>,
+    }    
+    impl Client for MockClient{
+        fn publish(&self, msg: mqtt::Message) -> mqtt::Result<DeliveryToken> {
+            let mut published = self.published.lock().unwrap();
+            published.push((msg.topic().to_string(),msg.payload_str().to_string()));
+            Ok(DeliveryToken::new(msg))
+        }
+        fn subscribe_many(&self, _topics: &[&str], _qos: &[u8]) -> mqtt::Result<mqtt::ServerResponse>{Ok(mqtt::ServerResponse::default())}
+    }
+
+    impl MockClient {
+        fn new() -> Self {
+            MockClient {
+                published: Arc::new(Mutex::new(Vec::new())),
+            }
+        }
+    }
+
+    #[test]
+    fn test_process_message_close() {
+        // Create a MockClient
+        let mock_client = Arc::new(MockClient::new());
+        let mock_client_clone = mock_client.clone();
+        
+        // Create a Box<dyn Client> from MockClient
+        let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
+        let event_handler = MqttEventHandler::new(boxed_client);
+        event_handler.process_message("some_topic", "some_payload".as_bytes());
+        let published = mock_client.published.lock().unwrap(); 
+        assert_eq!(published.len(), 1);
+        assert_eq!(published[0], ("cover_command".to_string(), "close".to_string()));
     }
 }
