@@ -115,8 +115,12 @@ impl MqttEventHandler {
         }
     }
 
-    pub fn subscribe_to_topics(&self, topics: &[&str]) -> mqtt::Result<mqtt::ServerResponse>{
+    pub fn subscribe_to_topics(&self) -> mqtt::Result<mqtt::ServerResponse>{
         let qos = [1; 3];
+        let topics = [
+            MqttTopics::SWITCH_OPEN_STATUS,
+            MqttTopics::SWITCH_CLOSE_STATUS
+        ];
         return self.client.subscribe_many(&topics, &qos);
     }
     pub fn process_message(&self, topic: &str, payload: &[u8]) {
@@ -135,7 +139,8 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     // Struct to mock the mqtt::Client
-    #[derive(Clone)]    struct MockClient {
+    #[derive(Clone)]    
+    struct MockClient {
         // Use mutex to share the published field
         published: Arc<Mutex<Vec<(String, String)>>>,
     }    

@@ -3,7 +3,6 @@ mod mqtt_events;
 
 use mqtt_events::{MqttEventHandler, Client};
 use paho_mqtt as mqtt;
-use mqtt_topics::MqttTopics;
 use std::time::Duration;
 
 fn main() {
@@ -23,11 +22,7 @@ fn main() {
     let boxed_client: Box<dyn Client> = Box::new(client.clone());
     // Create the event_handler and pass it the boxed client.
     let event_handler = MqttEventHandler::new(boxed_client);
-    event_handler.subscribe_to_topics(&[
-        MqttTopics::SWITCH_OPEN_STATUS,
-        MqttTopics::SWITCH_CLOSE_STATUS,
-        MqttTopics::COVER_COMMAND,
-    ]);
+    let _ = event_handler.subscribe_to_topics();
     let rx = client.start_consuming();    
 
     println!("Waiting for messages...\n");
