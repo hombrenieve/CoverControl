@@ -5,14 +5,18 @@ mod mqtt_events {
         pub client: mqtt::Client,
     }
 
-    use std::time::Duration;
+    pub struct MqttTopics;
+    
+    impl MqttTopics {
+        pub const SWITCH_OPEN_STATUS: &'static str = "switch_open_status";
+        pub const SWITCH_CLOSE_STATUS: &'static str = "switch_close_status";
+        pub const COVER_COMMAND: &'static str = "cover_command";
+        pub const COVER_STATUS: &'static str = "cover_status";
+        pub const SWITCH_OPEN_COMMAND: &'static str = "switch_open_command";
+        pub const SWITCH_CLOSE_COMMAND: &'static str = "switch_close_command";
+    }
 
-    const SWITCH_OPEN_STATUS_TOPIC: &str = "switch_open_status";
-    const SWITCH_CLOSE_STATUS_TOPIC: &str = "switch_close_status";
-    const COVER_COMMAND_TOPIC: &str = "cover_command";
-    const COVER_STATUS_TOPIC: &str = "cover_status";
-    const SWITCH_OPEN_COMMAND_TOPIC: &str = "switch_open_command";
-    const SWITCH_CLOSE_COMMAND_TOPIC: &str = "switch_close_command";
+    use std::time::Duration;
 
     impl MqttEventHandler {
         pub fn new() -> Self {
@@ -35,20 +39,20 @@ mod mqtt_events {
 
         pub fn subscribe_to_topics(&self) {
             let topics = [
-                SWITCH_OPEN_STATUS_TOPIC,
-                SWITCH_CLOSE_STATUS_TOPIC,
-                COVER_COMMAND_TOPIC,
+                MqttTopics::SWITCH_OPEN_STATUS,
+                MqttTopics::SWITCH_CLOSE_STATUS,
+                MqttTopics::COVER_COMMAND,
             ];
             let qos = [1; 3];
             self.client.subscribe_many(&topics, &qos).unwrap();
         }
 
         pub fn process_message(&self, topic: &str, payload: &[u8]) {
-            println!("Received message on topic: {} with payload: {:?}", topic, payload);
+            println!("Received message on topic: {} with payload: {:?}", topic, std::str::from_utf8(payload));
             // Send a message to the status and command topics.
-            self.client.publish(mqtt::Message::new(COVER_STATUS_TOPIC, "cover_status", 1)).unwrap();
-            self.client.publish(mqtt::Message::new(SWITCH_OPEN_COMMAND_TOPIC, "switch_open_command", 1)).unwrap();
-            self.client.publish(mqtt::Message::new(SWITCH_CLOSE_COMMAND_TOPIC, "switch_close_command", 1)).unwrap();
+            self.client.publish(mqtt::Message::new(MqttTopics::COVER_STATUS, "cover_status", 1)).unwrap();
+            self.client.publish(mqtt::Message::new(MqttTopics::SWITCH_OPEN_COMMAND, "switch_open_command", 1)).unwrap();
+            self.client.publish(mqtt::Message::new(MqttTopics::SWITCH_CLOSE_COMMAND, "switch_close_command", 1)).unwrap();
         }
     }
 }
