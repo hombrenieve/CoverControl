@@ -110,16 +110,11 @@ impl MqttEventHandler {
         Ok(())
     }
 
-
     pub fn process_message(&mut self, topic: &str, payload: &[u8]) {
-        let new_state = match &self.state {
-            StateEnum::Open(state) => state.process_message(topic, payload),
-            StateEnum::Close(state) => state.process_message(topic, payload),
-            StateEnum::Opening(state) => state.process_message(topic, payload),
-            StateEnum::Closing(state) => state.process_message(topic, payload),
-        };
+        let new_state = self.state.process_message(topic, payload);
         self.change_state(new_state);
     }    
+  
     pub fn change_state(&mut self, new_state: StateEnum) {
          let payload = match &new_state{
             StateEnum::Open(_) => "open",
@@ -135,6 +130,19 @@ impl MqttEventHandler {
         self.state = new_state;
     }
 }
+
+impl StateEnum {
+    fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum {
+        match self {
+            StateEnum::Open(state) => state.process_message(topic, payload),
+            StateEnum::Close(state) => state.process_message(topic, payload),
+            StateEnum::Opening(state) => state.process_message(topic, payload),
+            StateEnum::Closing(state) => state.process_message(topic, payload),
+        }
+    }
+}
+
+
 
 // Test module, now in this same file
 #[cfg(test)]
