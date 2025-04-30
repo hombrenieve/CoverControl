@@ -21,7 +21,7 @@ fn main() {
     // We need to Box the real client to pass it to MqttEventHandler
     let boxed_client: Box<dyn Client> = Box::new(client.clone());
     // Create the event_handler and pass it the boxed client.
-    let event_handler = MqttEventHandler::new(boxed_client);
+    let mut event_handler = MqttEventHandler::new(boxed_client);
     
     if let Err(err) = event_handler.initialize(){
         eprintln!("Error initializing MqttEventHandler: {}", err);
