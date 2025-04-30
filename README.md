@@ -29,7 +29,7 @@ The virtual cover device consists of the following components:
 
 The application interacts with MQTT, responding to specific topics and publishing commands via MQTT messages. The specific topics used are defined within the application.
 
-## Mermaid Diagram
+## Interaction Diagram
 
 Here's a simple diagram illustrating the interaction between the components:
 ```mermaid
@@ -45,6 +45,26 @@ graph LR
 * Home Assistant send a command to the virtual cover device.
 * Virtual cover device sends a command to one of the switches.
 * The switches will update their status and publish this to home assistant.
+
+## State Diagram
+
+In a simplified way the state transition in the VCD is as follows:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Close
+    Close --> Opening : Open Command
+    Opening --> Open : Time elapses
+    Opening --> Closing : Close Command
+    Open --> Closing : Close Command
+    Closing --> Close : Time elapses
+```
+
+There are two different ways to get the Open or Close commands, either from Home Assistant or from the switches themselves.
+* From Home Assistant it will be received in the COVER_COMMAND.
+and processed as a command to the switches in the corresponding topic.
+* From the switches it will be received in the SWITCH_OPEN_STATE or SWITCH_CLOSE_STATE and processed as a state change to the virtual cover in 
+the COVER_STATE topic.
 
 ## Getting Started
 
