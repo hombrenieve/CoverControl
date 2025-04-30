@@ -22,7 +22,11 @@ fn main() {
     let boxed_client: Box<dyn Client> = Box::new(client.clone());
     // Create the event_handler and pass it the boxed client.
     let event_handler = MqttEventHandler::new(boxed_client);
-    let _ = event_handler.initialize();
+    
+    if let Err(err) = event_handler.initialize(){
+        eprintln!("Error initializing MqttEventHandler: {}", err);
+        return;
+    }
     let rx = client.start_consuming();    
 
     println!("Waiting for messages...\n");

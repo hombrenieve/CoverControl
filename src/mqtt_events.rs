@@ -115,14 +115,22 @@ impl MqttEventHandler {
         }
     }
 
-    pub fn initialize(&self) -> mqtt::Result<mqtt::ServerResponse>{
+    pub fn initialize(&self) -> Result<(), mqtt::Error> {
         let qos = [1; 3];
         let topics = [
             MqttTopics::SWITCH_OPEN_STATE,
             MqttTopics::SWITCH_CLOSE_STATE,
             MqttTopics::COVER_STATE,
         ];
-        return self.client.subscribe_many(&topics, &qos);
+        self.client.subscribe_many(&topics, &qos)?;
+        self.client.publish(
+            mqtt::Message::new(
+                MqttTopics::COVER_AVAILABILITY,
+                "online",
+                1,
+            )
+        )?;
+        Ok(())
     }
 
 
@@ -147,6 +155,8 @@ mod tests {
     struct MockClient {
         // Use mutex to share the published field
         published: Arc<Mutex<Vec<(String, String)>>>,
+        subscribed: Arc<Mutex<Vec<Vec<String>>>>,
+
     }    
     impl Client for MockClient{
         fn publish(&self, msg: mqtt::Message) -> mqtt::Result<DeliveryToken> {
@@ -154,13 +164,18 @@ mod tests {
             published.push((msg.topic().to_string(),msg.payload_str().to_string()));
             Ok(DeliveryToken::new(msg))
         }
-        fn subscribe_many(&self, _topics: &[&str], _qos: &[u8]) -> mqtt::Result<mqtt::ServerResponse>{Ok(mqtt::ServerResponse::default())}
+        fn subscribe_many(&self, topics: &[&str], _qos: &[u8]) -> mqtt::Result<mqtt::ServerResponse>{
+            let mut subscribed = self.subscribed.lock().unwrap();
+            subscribed.push(topics.iter().map(|s| s.to_string()).collect());
+            Ok(mqtt::ServerResponse::default())
+        }
     }
 
     impl MockClient {
         fn new() -> Self {
             MockClient {
                 published: Arc::new(Mutex::new(Vec::new())),
+                subscribed: Arc::new(Mutex::new(Vec::new())),
             }
         }
     }
@@ -179,4 +194,37 @@ mod tests {
         assert_eq!(published.len(), 1);
         assert_eq!(published[0], (MqttTopics::COVER_COMMAND.to_string(), "close".to_string()));
     }
+
+    #[test]
+    fn test_initialize() {
+        // Create a MockClient
+        let mock_client = Arc::new(MockClient::new());
+        let mock_client_clone = mock_client.clone();
+
+        // Create a Box<dyn Client> from MockClient
+        let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
+        let event_handler = MqttEventHandler::new(boxed_client);
+        event_handler.initialize().unwrap();
+
+        // Verify that the handler subscribed to the correct topics
+        let subscribed = mock_client.subscribed.lock().unwrap();
+        assert_eq!(subscribed.len(), 1);
+        assert_eq!(
+            subscribed[0],
+            vec![
+                MqttTopics::SWITCH_OPEN_STATE.to_string(),
+                MqttTopics::SWITCH_CLOSE_STATE.to_string(),
+                MqttTopics::COVER_STATE.to_string(),
+            ]
+        );
+
+        // Verify that the handler published the "online" message
+        let published = mock_client.published.lock().unwrap();
+        assert_eq!(published.len(), 1);
+        assert_eq!(
+            published[0],
+            (MqttTopics::COVER_AVAILABILITY.to_string(), "online".to_string())
+        );
+    }
+
 }
