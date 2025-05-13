@@ -46,6 +46,43 @@ graph LR
 * Virtual cover device sends a command to one of the switches.
 * The switches will update their status and publish this to home assistant.
 
+## State Machine
+
+The cover device implements a state machine to maintain and track the current state of the virtual cover device. This is essential because:
+
+1. **State Consistency**: The state machine ensures that the cover device can only transition between valid states in a controlled manner, preventing invalid state combinations.
+2. **State Memory**: It maintains the current position/state of the cover (open, closed, or in transition) even when no commands are being received.
+3. **Input Validation**: Only valid commands for the current state are processed, while invalid or irrelevant commands are ignored, making the system more robust.
+4. **Predictable Behavior**: The state transitions are well-defined and documented, making the system's behavior predictable and easier to test.
+
+The state machine has four states:
+
+1. **Close**: The initial state, representing a fully closed cover
+2. **Opening**: Transitional state when the cover is in the process of opening
+3. **Open**: Represents a fully opened cover
+4. **Closing**: Transitional state when the cover is in the process of closing
+
+### State Transitions
+
+The state transitions are triggered by specific MQTT messages:
+
+- **Close → Opening**: Triggered by "opening" message
+- **Opening → Open**: Triggered by "open" message
+- **Open → Closing**: Triggered by "closing" message
+- **Closing → Close**: Triggered by "close" message
+
+Here's a diagram showing the state transitions:
+
+```mermaid
+stateDiagram-v2
+    Close --> Opening: "opening"
+    Opening --> Open: "open"
+    Open --> Closing: "closing"
+    Closing --> Close: "close"
+```
+
+Any other messages received in a state will be ignored and the state will remain unchanged.
+
 ## Getting Started
 
 To run the application, follow these steps:
