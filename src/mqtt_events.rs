@@ -1,4 +1,4 @@
-use crate::mqtt_topics::MqttTopics;
+use crate::mqtt_constants::{MqttTopics, MqttPayloads};
 
 use paho_mqtt::{self as mqtt, message::Message};
 use paho_mqtt::DeliveryToken;
@@ -53,11 +53,11 @@ pub struct OpenState;
 impl State for OpenState{
     fn process_message(&self, client: &Box<dyn Client>, _topic: &str, payload: &[u8]) -> StateEnum {
         if let Ok(payload_str) = std::str::from_utf8(payload) {
-            if payload_str == "closing" {
+            if payload_str == MqttPayloads::STATE_CLOSING {
                 client.publish(
                     mqtt::Message::new(
                         MqttTopics::COVER_COMMAND, 
-                        "closing",
+                        MqttPayloads::STATE_CLOSING,
                         1
                     )
                 ).unwrap();
@@ -74,11 +74,11 @@ pub struct CloseState;
 impl State for CloseState {
     fn process_message(&self, client: &Box<dyn Client>, _topic: &str, payload: &[u8]) -> StateEnum {
         if let Ok(payload_str) = std::str::from_utf8(payload) {
-            if payload_str == "opening" {
+            if payload_str == MqttPayloads::STATE_OPENING {
                 client.publish(
                     mqtt::Message::new(
                         MqttTopics::COVER_COMMAND, 
-                        "opening",
+                        MqttPayloads::STATE_OPENING,
                         1
                     )
                 ).unwrap();
@@ -96,11 +96,11 @@ pub struct OpeningState;
 impl State for OpeningState {
     fn process_message(&self, client: &Box<dyn Client>, _topic: &str, payload: &[u8]) -> StateEnum {
         if let Ok(payload_str) = std::str::from_utf8(payload) {
-            if payload_str == "open" {
+            if payload_str == MqttPayloads::STATE_OPEN {
                 client.publish(
                     mqtt::Message::new(
                         MqttTopics::COVER_COMMAND, 
-                        "open",
+                        MqttPayloads::STATE_OPEN,
                         1
                     )
                 ).unwrap();
@@ -117,11 +117,11 @@ pub struct ClosingState;
 impl State for ClosingState {
     fn process_message(&self, client: &Box<dyn Client>, _topic: &str, payload: &[u8]) -> StateEnum {
         if let Ok(payload_str) = std::str::from_utf8(payload) {
-            if payload_str == "close" {
+            if payload_str == MqttPayloads::STATE_CLOSE {
                 client.publish(
                     mqtt::Message::new(
                         MqttTopics::COVER_COMMAND, 
-                        "close",
+                        MqttPayloads::STATE_CLOSE,
                         1
                     )
                 ).unwrap();
@@ -166,7 +166,7 @@ impl MqttEventHandler {
         self.client.publish(
             mqtt::Message::new(
                 MqttTopics::COVER_AVAILABILITY,
-                "online",
+                MqttPayloads::AVAILABILITY_ONLINE,
                 1,
             )
         )?;
@@ -266,7 +266,7 @@ mod tests {
         assert_eq!(published.len(), 1);
         assert_eq!(
             published[0],
-            (MqttTopics::COVER_AVAILABILITY.to_string(), "online".to_string())
+            (MqttTopics::COVER_AVAILABILITY.to_string(), MqttPayloads::AVAILABILITY_ONLINE.to_string())
         );
     }
     
@@ -288,7 +288,7 @@ mod tests {
         assert_eq!(event_handler.get_state_type(), "Close");
         
         // Process correct message for CloseState -> OpeningState
-        event_handler.process_message("some_topic", "opening".as_bytes());
+        event_handler.process_message("some_topic", MqttPayloads::STATE_OPENING.as_bytes());
         assert_eq!(event_handler.get_state_type(), "Opening");
         
         // Test that state doesn't change with incorrect payload
@@ -296,24 +296,24 @@ mod tests {
         assert_eq!(event_handler.get_state_type(), "Opening");
         
         // Process correct message for OpeningState -> OpenState
-        event_handler.process_message("some_topic", "open".as_bytes());
+        event_handler.process_message("some_topic", MqttPayloads::STATE_OPEN.as_bytes());
         assert_eq!(event_handler.get_state_type(), "Open");
         
         // Process correct message for OpenState -> ClosingState
-        event_handler.process_message("some_topic", "closing".as_bytes());
+        event_handler.process_message("some_topic", MqttPayloads::STATE_CLOSING.as_bytes());
         assert_eq!(event_handler.get_state_type(), "Closing");
         
         // Process correct message for ClosingState -> CloseState
-        event_handler.process_message("some_topic", "close".as_bytes());
+        event_handler.process_message("some_topic", MqttPayloads::STATE_CLOSE.as_bytes());
         assert_eq!(event_handler.get_state_type(), "Close");
         
         // Verify the full cycle of state transitions
         let published = mock_client.published.lock().unwrap();
         assert_eq!(published.len(), 4);
-        assert_eq!(published[0], (MqttTopics::COVER_COMMAND.to_string(), "opening".to_string()));
-        assert_eq!(published[1], (MqttTopics::COVER_COMMAND.to_string(), "open".to_string()));
-        assert_eq!(published[2], (MqttTopics::COVER_COMMAND.to_string(), "closing".to_string()));
-        assert_eq!(published[3], (MqttTopics::COVER_COMMAND.to_string(), "close".to_string()));
+        assert_eq!(published[0], (MqttTopics::COVER_COMMAND.to_string(), MqttPayloads::STATE_OPENING.to_string()));
+        assert_eq!(published[1], (MqttTopics::COVER_COMMAND.to_string(), MqttPayloads::STATE_OPEN.to_string()));
+        assert_eq!(published[2], (MqttTopics::COVER_COMMAND.to_string(), MqttPayloads::STATE_CLOSING.to_string()));
+        assert_eq!(published[3], (MqttTopics::COVER_COMMAND.to_string(), MqttPayloads::STATE_CLOSE.to_string()));
     }
 
 }
