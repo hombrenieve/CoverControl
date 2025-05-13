@@ -113,10 +113,11 @@ impl MqttEventHandler {
     pub fn process_message(&mut self, topic: &str, payload: &[u8]) {
         let new_state = self.state.process_message(topic, payload);
         self.change_state(new_state);
+        self.publish_state();
     }    
   
-    pub fn change_state(&mut self, new_state: StateEnum) {
-         let payload = match &new_state{
+    fn publish_state(&self) {
+        let payload = match &self.state {
             StateEnum::Open(_) => "open",
             StateEnum::Close(_) => "close",
             StateEnum::Opening(_) => "opening",
@@ -127,6 +128,9 @@ impl MqttEventHandler {
             payload,
             1,
         )).unwrap();
+    }
+
+    pub fn change_state(&mut self, new_state: StateEnum) {
         self.state = new_state;
     }
 }
@@ -253,6 +257,7 @@ mod tests {
         let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
         let mut event_handler = MqttEventHandler::new(boxed_client);
         event_handler.change_state(StateEnum::Opening(OpeningState));
+        event_handler.publish_state();
         event_handler.process_message(MqttTopics::COVER_COMMAND, "open".as_bytes());
         let published = mock_client.published.lock().unwrap();
         assert_eq!(published.len(), 2);
@@ -270,6 +275,7 @@ mod tests {
         let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
         let mut event_handler = MqttEventHandler::new(boxed_client);
         event_handler.change_state(StateEnum::Open(OpenState));
+        event_handler.publish_state();
         event_handler.process_message(MqttTopics::COVER_COMMAND, "closing".as_bytes());
         let published = mock_client.published.lock().unwrap();
         assert_eq!(published.len(), 2);
@@ -286,6 +292,7 @@ mod tests {
          let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
          let mut event_handler = MqttEventHandler::new(boxed_client);
          event_handler.change_state(StateEnum::Closing(ClosingState));
+         event_handler.publish_state();
          event_handler.process_message(MqttTopics::COVER_COMMAND, "close".as_bytes());
          let published = mock_client.published.lock().unwrap();
          assert_eq!(published.len(), 2);
