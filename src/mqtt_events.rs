@@ -26,7 +26,7 @@ pub struct MqttEventHandler {
 }
 
 pub trait State {
-    fn process_message(&self, event_handler: &MqttEventHandler, topic: &str, payload: &[u8]);
+    fn process_message(&self, client: &Box<dyn Client>, topic: &str, payload: &[u8]) -> StateEnum;
 }
 // We can simplify this and remove the unused states
 
@@ -38,12 +38,12 @@ pub enum StateEnum {
 }
 
 impl State for StateEnum {
-    fn process_message(&self, event_handler: &MqttEventHandler, topic: &str, payload: &[u8]) {
+    fn process_message(&self, client: &Box<dyn Client>, topic: &str, payload: &[u8]) -> StateEnum {
        match self {
-            StateEnum::Open(state) => state.process_message(event_handler, topic, payload),
-            StateEnum::Close(state) => state.process_message(event_handler, topic, payload),
-            StateEnum::Opening(state) => state.process_message(event_handler, topic, payload),
-            StateEnum::Closing(state) => state.process_message(event_handler, topic, payload),
+            StateEnum::Open(state) => state.process_message(client, topic, payload),
+            StateEnum::Close(state) => state.process_message(client, topic, payload),
+            StateEnum::Opening(state) => state.process_message(client, topic, payload),
+            StateEnum::Closing(state) => state.process_message(client, topic, payload),
         }
     }
 }
@@ -51,56 +51,64 @@ impl State for StateEnum {
 pub struct OpenState;
 
 impl State for OpenState{
-    fn process_message(&self, event_handler: &MqttEventHandler, _topic: &str, _payload: &[u8]) {
-        event_handler.client.publish(
+    fn process_message(&self, client: &Box<dyn Client>, _topic: &str, _payload: &[u8]) -> StateEnum {
+        client.publish(
             mqtt::Message::new(
                 MqttTopics::COVER_COMMAND, 
                 "open",
                 1
             )
         ).unwrap();
+        // Transition: OpenState -> ClosingState
+        StateEnum::Closing(ClosingState)
     }
 }
 
 pub struct CloseState;
 
 impl State for CloseState {
-    fn process_message(&self, event_handler: &MqttEventHandler, _topic: &str, _payload: &[u8]) {
-        event_handler.client.publish(
+    fn process_message(&self, client: &Box<dyn Client>, _topic: &str, _payload: &[u8]) -> StateEnum {
+        client.publish(
             mqtt::Message::new(
                 MqttTopics::COVER_COMMAND, 
                 "close",
                 1
             )
         ).unwrap();
+        // Transition: CloseState -> OpeningState
+        StateEnum::Opening(OpeningState)
     }
 }
 
 pub struct OpeningState;
 
 impl State for OpeningState {
-    fn process_message(&self, event_handler: &MqttEventHandler, _topic: &str, _payload: &[u8]) {
-        event_handler.client.publish(
+    fn process_message(&self, client: &Box<dyn Client>, _topic: &str, _payload: &[u8]) -> StateEnum {
+        client.publish(
             mqtt::Message::new(
                 MqttTopics::COVER_COMMAND, 
                 "opening",
                 1
             )
         ).unwrap();
+        // Transition: OpeningState -> OpenState
+        StateEnum::Open(OpenState)
     }
 }
 
 pub struct ClosingState;
 
 impl State for ClosingState {
-    fn process_message(&self, event_handler: &MqttEventHandler, _topic: &str, _payload: &[u8]) {
-        event_handler.client.publish(
+    fn process_message(&self, client: &Box<dyn Client>, _topic: &str, _payload: &[u8]) -> StateEnum {
+        client.publish(
             mqtt::Message::new(
                 MqttTopics::COVER_COMMAND, 
                 "closing",
                 1
             )
         ).unwrap();
+        // Transition: ClosingState -> CloseState
+        StateEnum::Close(CloseState)
     }
 }
 
@@ -112,6 +120,17 @@ impl MqttEventHandler {
         MqttEventHandler {
             client,
             state: StateEnum::Close(CloseState),
+        }
+    }
+    
+    // Helper method to get the current state type for testing
+    #[cfg(test)]
+    pub fn get_state_type(&self) -> &'static str {
+        match self.state {
+            StateEnum::Open(_) => "Open",
+            StateEnum::Close(_) => "Close",
+            StateEnum::Opening(_) => "Opening",
+            StateEnum::Closing(_) => "Closing",
         }
     }
 
@@ -135,8 +154,13 @@ impl MqttEventHandler {
 
 
 
-    pub fn process_message(&self, topic: &str, payload: &[u8]) {
-       self.state.process_message(self, topic, payload);
+    pub fn process_message(&mut self, topic: &str, payload: &[u8]) {
+        // Take ownership of the state to avoid borrowing conflicts
+        let current_state = std::mem::replace(&mut self.state, StateEnum::Close(CloseState));
+        // Process the message with the current state
+        let new_state = current_state.process_message(&self.client, topic, payload);
+        // Update the state
+        self.state = new_state;
     }
 
     pub fn change_state(&mut self, new_state: StateEnum) {
@@ -188,7 +212,7 @@ mod tests {
         
         // Create a Box<dyn Client> from MockClient
         let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
-        let event_handler = MqttEventHandler::new(boxed_client);
+        let mut event_handler = MqttEventHandler::new(boxed_client);
         event_handler.process_message("some_topic", "some_payload".as_bytes());
         let published = mock_client.published.lock().unwrap(); 
         assert_eq!(published.len(), 1);
@@ -225,6 +249,44 @@ mod tests {
             published[0],
             (MqttTopics::COVER_AVAILABILITY.to_string(), "online".to_string())
         );
+    }
+    
+    #[test]
+    fn test_state_transitions() {
+        // Create a MockClient
+        let mock_client = Arc::new(MockClient::new());
+        let mock_client_clone = mock_client.clone();
+        
+        // Create a Box<dyn Client> from MockClient
+        let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
+        let mut event_handler = MqttEventHandler::new(boxed_client);
+        
+        // Initial state should be Close
+        assert_eq!(event_handler.get_state_type(), "Close");
+        
+        // Process message to trigger state transition: CloseState -> OpeningState
+        event_handler.process_message("some_topic", "some_payload".as_bytes());
+        assert_eq!(event_handler.get_state_type(), "Opening");
+        
+        // Process message to trigger state transition: OpeningState -> OpenState
+        event_handler.process_message("some_topic", "some_payload".as_bytes());
+        assert_eq!(event_handler.get_state_type(), "Open");
+        
+        // Process message to trigger state transition: OpenState -> ClosingState
+        event_handler.process_message("some_topic", "some_payload".as_bytes());
+        assert_eq!(event_handler.get_state_type(), "Closing");
+        
+        // Process message to trigger state transition: ClosingState -> CloseState
+        event_handler.process_message("some_topic", "some_payload".as_bytes());
+        assert_eq!(event_handler.get_state_type(), "Close");
+        
+        // Verify the full cycle of state transitions
+        let published = mock_client.published.lock().unwrap();
+        assert_eq!(published.len(), 4);
+        assert_eq!(published[0], (MqttTopics::COVER_COMMAND.to_string(), "close".to_string()));
+        assert_eq!(published[1], (MqttTopics::COVER_COMMAND.to_string(), "opening".to_string()));
+        assert_eq!(published[2], (MqttTopics::COVER_COMMAND.to_string(), "open".to_string()));
+        assert_eq!(published[3], (MqttTopics::COVER_COMMAND.to_string(), "closing".to_string()));
     }
 
 }
