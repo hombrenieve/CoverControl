@@ -1,4 +1,4 @@
-mod mqtt_topics;
+mod mqtt_constants;
 mod mqtt_events;
 
 use mqtt_events::{MqttEventHandler, Client};

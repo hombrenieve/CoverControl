@@ -1,4 +1,4 @@
-use crate::mqtt_topics::MqttTopics;
+use crate::mqtt_constants::{MqttTopics, MqttPayloads};
 
 use paho_mqtt::{self as mqtt, message::Message};
 use paho_mqtt::DeliveryToken;
@@ -41,7 +41,7 @@ pub struct OpenState;
 
 impl State for OpenState{
     fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum {
-        if topic == MqttTopics::COVER_COMMAND && payload == "closing".as_bytes(){
+        if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_CLOSE.as_bytes(){
             return StateEnum::Closing(ClosingState);
         }
         return StateEnum::Open(OpenState);
@@ -52,7 +52,7 @@ pub struct CloseState;
 
 impl State for CloseState {
     fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum{
-        if topic == MqttTopics::COVER_COMMAND && payload == "opening".as_bytes(){
+        if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_OPEN.as_bytes(){
             return StateEnum::Opening(OpeningState);
         }
         return StateEnum::Close(CloseState);
@@ -63,7 +63,7 @@ pub struct OpeningState;
 
 impl State for OpeningState {
     fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum{
-        if topic == MqttTopics::COVER_COMMAND && payload == "open".as_bytes(){
+        if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_OPEN.as_bytes(){
             return StateEnum::Open(OpenState);
         }
         return StateEnum::Opening(OpeningState);
@@ -74,7 +74,7 @@ pub struct ClosingState;
 
 impl State for ClosingState {
     fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum{
-        if topic == MqttTopics::COVER_COMMAND && payload == "close".as_bytes(){
+        if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_CLOSE.as_bytes(){
             return StateEnum::Close(CloseState);
         }
         return StateEnum::Closing(ClosingState);
@@ -103,7 +103,7 @@ impl MqttEventHandler {
         self.client.publish(
             mqtt::Message::new(
                 MqttTopics::COVER_AVAILABILITY,
-                "online",
+                MqttPayloads::AVAILABILITY_ONLINE,
                 1,
             )
         )?;
@@ -118,10 +118,10 @@ impl MqttEventHandler {
   
     fn publish_state(&self) {
         let payload = match &self.state {
-            StateEnum::Open(_) => "open",
-            StateEnum::Close(_) => "close",
-            StateEnum::Opening(_) => "opening",
-            StateEnum::Closing(_) => "closing",
+            StateEnum::Open(_) => MqttPayloads::STATE_OPEN,
+            StateEnum::Close(_) => MqttPayloads::STATE_CLOSE,
+            StateEnum::Opening(_) => MqttPayloads::STATE_OPENING,
+            StateEnum::Closing(_) => MqttPayloads::STATE_CLOSING,
         };
         self.client.publish(mqtt::Message::new(
             MqttTopics::COVER_STATE,
@@ -197,7 +197,7 @@ mod tests {
         let published = mock_client.published.lock().unwrap();
         //the first message is not sent in process message.
         assert_eq!(published.len(), 1);
-        assert_eq!(published[0], (MqttTopics::COVER_STATE.to_string(), "close".to_string()));
+        assert_eq!(published[0], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSE.to_string()));
     }   
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(published.len(), 1);
         assert_eq!(
             published[0],
-            (MqttTopics::COVER_AVAILABILITY.to_string(), "online".to_string())
+            (MqttTopics::COVER_AVAILABILITY.to_string(), MqttPayloads::AVAILABILITY_ONLINE.to_string())
         );
     }
     #[test]
@@ -240,10 +240,10 @@ mod tests {
         // Create a Box<dyn Client> from MockClient
         let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
         let mut event_handler = MqttEventHandler::new(boxed_client);
-        event_handler.process_message(MqttTopics::COVER_COMMAND, "opening".as_bytes());
+        event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_OPEN.as_bytes());
         let published = mock_client.published.lock().unwrap();
         assert_eq!(published.len(), 1);
-        assert_eq!(published[0], (MqttTopics::COVER_STATE.to_string(), "opening".to_string()));
+        assert_eq!(published[0], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPENING.to_string()));
 
 
     }
@@ -258,10 +258,10 @@ mod tests {
         let mut event_handler = MqttEventHandler::new(boxed_client);
         event_handler.change_state(StateEnum::Opening(OpeningState));
         event_handler.publish_state();
-        event_handler.process_message(MqttTopics::COVER_COMMAND, "open".as_bytes());
+        event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_OPEN.as_bytes());
         let published = mock_client.published.lock().unwrap();
         assert_eq!(published.len(), 2);
-        assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), "open".to_string()));
+        assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPEN.to_string()));
 
 
     }
@@ -276,10 +276,10 @@ mod tests {
         let mut event_handler = MqttEventHandler::new(boxed_client);
         event_handler.change_state(StateEnum::Open(OpenState));
         event_handler.publish_state();
-        event_handler.process_message(MqttTopics::COVER_COMMAND, "closing".as_bytes());
+        event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_CLOSE.as_bytes());
         let published = mock_client.published.lock().unwrap();
         assert_eq!(published.len(), 2);
-        assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), "closing".to_string()));
+        assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSING.to_string()));
 
     }
     #[test]
@@ -293,10 +293,10 @@ mod tests {
          let mut event_handler = MqttEventHandler::new(boxed_client);
          event_handler.change_state(StateEnum::Closing(ClosingState));
          event_handler.publish_state();
-         event_handler.process_message(MqttTopics::COVER_COMMAND, "close".as_bytes());
+         event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_CLOSE.as_bytes());
          let published = mock_client.published.lock().unwrap();
          assert_eq!(published.len(), 2);
-         assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), "close".to_string()));
+         assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSE.to_string()));
  
     }
 }
