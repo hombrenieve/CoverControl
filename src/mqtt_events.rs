@@ -3,7 +3,7 @@ use crate::mqtt_constants::{MqttTopics, MqttPayloads};
 use paho_mqtt::{self as mqtt, message::Message};
 use paho_mqtt::DeliveryToken;
 
-pub trait Client {
+pub trait Client: Send {
     fn publish(&self, msg: mqtt::Message) -> mqtt::Result<mqtt::DeliveryToken>;
     fn subscribe_many(&self, topics: &[&str], qos: &[u8]) -> mqtt::Result<mqtt::ServerResponse>;
 }
@@ -132,6 +132,17 @@ impl MqttEventHandler {
 
     pub fn change_state(&mut self, new_state: StateEnum) {
         self.state = new_state;
+    }
+
+    pub fn finalize(&self) -> Result<(), mqtt::Error> {
+        self.client.publish(
+            mqtt::Message::new(
+                MqttTopics::COVER_AVAILABILITY,
+                MqttPayloads::AVAILABILITY_OFFLINE,
+                1,
+            )
+        )?;
+        Ok(())
     }
 }
 
@@ -298,5 +309,26 @@ mod tests {
          assert_eq!(published.len(), 2);
          assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSE.to_string()));
  
+    }
+    #[test]
+    fn test_finalize() {
+        // Create a MockClient
+        let mock_client = Arc::new(MockClient::new());
+        let mock_client_clone = mock_client.clone();
+
+        // Create a Box<dyn Client> from MockClient
+        let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
+        let event_handler = MqttEventHandler::new(boxed_client);
+        
+        // Call finalize
+        event_handler.finalize().unwrap();
+
+        // Verify that the offline message was published
+        let published = mock_client.published.lock().unwrap();
+        assert_eq!(published.len(), 1);
+        assert_eq!(
+            published[0],
+            (MqttTopics::COVER_AVAILABILITY.to_string(), MqttPayloads::AVAILABILITY_OFFLINE.to_string())
+        );
     }
 }
