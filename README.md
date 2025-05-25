@@ -66,6 +66,26 @@ and processed as a command to the switches in the corresponding topic.
 * From the switches it will be received in the SWITCH_OPEN_STATE or SWITCH_CLOSE_STATE and processed as a state change to the virtual cover in 
 the COVER_STATE topic.
 
+## Complete transitions
+
+In order to implement the full state machine the transitions to follow are:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Close
+    Close --> Close: Trigger - Open Command<br/>Action - Set close switch to off<br/>Action - Set open switch to on
+    Close --> Opening : Status change open switch to on
+    Opening --> Open : Trigger - Time elapses (1,30m)<br>Action - Set open switch to off
+    Opening --> Opening: Trigger - Close Command<br/>Action - Stop timer<br/>Action - Set open switch to off<br>Action - Set close switch to on 
+    Opening --> Closing : Status change close switch to on
+    Open --> Open: Trigger - Close Command<br/>Action - Set open switch to off<br/>Action - Set close switch to on
+    Open --> Closing : Status change close switch to on
+    Closing --> Closing: Trigger - Open Command<br/>Action - Stop timer<br/>Action - Set close switch to off<br>Action - Set open switch to on
+    Closing --> Close : Time elapses (1,30m)<br>Action - Set close switch to off
+    Closing --> Closing: Trigger - Stop command<br/>Action - Stop timer<br/>Action - Pulse close switch
+    Opening --> Opening: Trigger - Stop command<br/>Action - Stop timer<br/>Action - Pulse open switch
+```
+
 ## Getting Started
 
 To run the application, follow these steps:
