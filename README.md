@@ -21,6 +21,7 @@ The virtual cover device consists of the following components:
 2.  **Virtual Switches (2):** Two virtual switches, one for opening and one for closing the cover.
     * The switches will change their status when the virtual cover sends a message, this app will process and send to the appropriate topic depending on the switch.
     *   Each switch will publish its status (open/close) via MQTT.
+    *   The switches are configured to auto turn-off after one second (so it does just one pulse)
 3. **Home Assistant:**
    * The home automation platform that sends commands to the virtual cover.
    * Receives status messages from the virtual switches.
@@ -73,17 +74,17 @@ In order to implement the full state machine the transitions to follow are:
 ```mermaid
 stateDiagram-v2
     [*] --> Close
-    Close --> Close: Trigger - Open Command<br/>Action - Set close switch to off<br/>Action - Set open switch to on
+    Close --> Close: Trigger - Open Command<br/>Action - Set open switch to on
     Close --> Opening : Status change open switch to on
-    Opening --> Open : Trigger - Time elapses (1,30m)<br>Action - Set open switch to off
-    Opening --> Opening: Trigger - Close Command<br/>Action - Stop timer<br/>Action - Set open switch to off<br>Action - Set close switch to on 
+    Opening --> Open : Trigger - Time elapses (1,30m)
+    Opening --> Opening: Trigger - Close Command<br/>Action - Stop timer<br/>Action - Set close switch to on 
     Opening --> Closing : Status change close switch to on
-    Open --> Open: Trigger - Close Command<br/>Action - Set open switch to off<br/>Action - Set close switch to on
+    Open --> Open: Trigger - Close Command<br/>Action - Set close switch to on
     Open --> Closing : Status change close switch to on
-    Closing --> Closing: Trigger - Open Command<br/>Action - Stop timer<br/>Action - Set close switch to off<br>Action - Set open switch to on
-    Closing --> Close : Time elapses (1,30m)<br>Action - Set close switch to off
-    Closing --> Closing: Trigger - Stop command<br/>Action - Stop timer<br/>Action - Pulse close switch
-    Opening --> Opening: Trigger - Stop command<br/>Action - Stop timer<br/>Action - Pulse open switch
+    Closing --> Closing: Trigger - Open Command<br/>Action - Stop timer<br/>Action - Set open switch to on
+    Closing --> Close : Time elapses (1,30m)
+    Closing --> Closing: Trigger - Stop command<br/>Action - Stop timer<br/>Action - Set close switch to on
+    Opening --> Opening: Trigger - Stop command<br/>Action - Stop timer<br/>Action - Set open switch to on
 ```
 
 ## Getting Started
