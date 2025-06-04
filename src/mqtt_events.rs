@@ -32,7 +32,7 @@ pub enum StateEnum {
     Closing(ClosingState)
 }
 pub trait State {
-    fn process_message(&self, topic: &str, payload: &[u8])-> StateEnum;
+    fn process_message(&self, topic: &str, payload: &[u8], client: &dyn Client) -> StateEnum;
 }
 
 
@@ -40,44 +40,57 @@ pub trait State {
 pub struct OpenState;
 
 impl State for OpenState{
-    fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum {
+    fn process_message(&self, topic: &str, payload: &[u8], client: &dyn Client) -> StateEnum {
         if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_CLOSE.as_bytes(){
+            // Example: publish a message when transitioning to Closing
+            let _ = client.publish(
+                mqtt::Message::new(MqttTopics::COVER_STATE, MqttPayloads::STATE_CLOSING, 1)
+            );
             return StateEnum::Closing(ClosingState);
         }
-        return StateEnum::Open(OpenState);
+        StateEnum::Open(OpenState)
     }
 }
 
 pub struct CloseState;
 
 impl State for CloseState {
-    fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum{
+    fn process_message(&self, topic: &str, payload: &[u8], client: &dyn Client) -> StateEnum{
         if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_OPEN.as_bytes(){
+            let _ = client.publish(
+                mqtt::Message::new(MqttTopics::COVER_STATE, MqttPayloads::STATE_OPENING, 1)
+            );
             return StateEnum::Opening(OpeningState);
         }
-        return StateEnum::Close(CloseState);
+        StateEnum::Close(CloseState)
     }
 }
 
 pub struct OpeningState;
 
 impl State for OpeningState {
-    fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum{
+    fn process_message(&self, topic: &str, payload: &[u8], client: &dyn Client) -> StateEnum{
         if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_OPEN.as_bytes(){
+            let _ = client.publish(
+                mqtt::Message::new(MqttTopics::COVER_STATE, MqttPayloads::STATE_OPEN, 1)
+            );
             return StateEnum::Open(OpenState);
         }
-        return StateEnum::Opening(OpeningState);
+        StateEnum::Opening(OpeningState)
     }
 }
 
 pub struct ClosingState;
 
 impl State for ClosingState {
-    fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum{
+    fn process_message(&self, topic: &str, payload: &[u8], client: &dyn Client) -> StateEnum{
         if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_CLOSE.as_bytes(){
+            let _ = client.publish(
+                mqtt::Message::new(MqttTopics::COVER_STATE, MqttPayloads::STATE_CLOSE, 1)
+            );
             return StateEnum::Close(CloseState);
         }
-        return StateEnum::Closing(ClosingState);
+        StateEnum::Closing(ClosingState)
     }
 }
 
@@ -111,7 +124,7 @@ impl MqttEventHandler {
     }
 
     pub fn process_message(&mut self, topic: &str, payload: &[u8]) {
-        let new_state = self.state.process_message(topic, payload);
+        let new_state = self.state.process_message(topic, payload, self.client.as_ref());
         self.change_state(new_state);
         self.publish_state();
     }    
@@ -147,12 +160,12 @@ impl MqttEventHandler {
 }
 
 impl StateEnum {
-    fn process_message(&self, topic: &str, payload: &[u8]) -> StateEnum {
+    fn process_message(&self, topic: &str, payload: &[u8], client: &dyn Client) -> StateEnum {
         match self {
-            StateEnum::Open(state) => state.process_message(topic, payload),
-            StateEnum::Close(state) => state.process_message(topic, payload),
-            StateEnum::Opening(state) => state.process_message(topic, payload),
-            StateEnum::Closing(state) => state.process_message(topic, payload),
+            StateEnum::Open(state) => state.process_message(topic, payload, client),
+            StateEnum::Close(state) => state.process_message(topic, payload, client),
+            StateEnum::Opening(state) => state.process_message(topic, payload, client),
+            StateEnum::Closing(state) => state.process_message(topic, payload, client),
         }
     }
 }
@@ -253,10 +266,9 @@ mod tests {
         let mut event_handler = MqttEventHandler::new(boxed_client);
         event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_OPEN.as_bytes());
         let published = mock_client.published.lock().unwrap();
-        assert_eq!(published.len(), 1);
+        assert_eq!(published.len(), 2); // Now two messages: state change and publish_state
         assert_eq!(published[0], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPENING.to_string()));
-
-
+        assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPENING.to_string()));
     }
     #[test]
     fn test_opening_to_open() {
@@ -271,10 +283,9 @@ mod tests {
         event_handler.publish_state();
         event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_OPEN.as_bytes());
         let published = mock_client.published.lock().unwrap();
-        assert_eq!(published.len(), 2);
+        assert_eq!(published.len(), 3); // state_opening, state_open, state_open
         assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPEN.to_string()));
-
-
+        assert_eq!(published[2], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPEN.to_string()));
     }
     #[test]
     fn test_open_to_closing() {
@@ -289,9 +300,9 @@ mod tests {
         event_handler.publish_state();
         event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_CLOSE.as_bytes());
         let published = mock_client.published.lock().unwrap();
-        assert_eq!(published.len(), 2);
+        assert_eq!(published.len(), 3); // state_open, state_closing, state_closing
         assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSING.to_string()));
-
+        assert_eq!(published[2], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSING.to_string()));
     }
     #[test]
     fn test_closing_to_close() {
@@ -306,9 +317,9 @@ mod tests {
          event_handler.publish_state();
          event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_CLOSE.as_bytes());
          let published = mock_client.published.lock().unwrap();
-         assert_eq!(published.len(), 2);
+         assert_eq!(published.len(), 3); // state_closing, state_close, state_close
          assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSE.to_string()));
- 
+         assert_eq!(published[2], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSE.to_string()));
     }
     #[test]
     fn test_finalize() {
