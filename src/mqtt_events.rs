@@ -42,10 +42,11 @@ pub struct OpenState;
 impl State for OpenState{
     fn process_message(&self, topic: &str, payload: &[u8], client: &dyn Client) -> StateEnum {
         if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_CLOSE.as_bytes(){
-            // Example: publish a message when transitioning to Closing
             let _ = client.publish(
-                mqtt::Message::new(MqttTopics::COVER_STATE, MqttPayloads::STATE_CLOSING, 1)
+                mqtt::Message::new(MqttTopics::SWITCH_CLOSE_COMMAND, MqttPayloads::SWITCH_ON, 1)
             );
+        }
+        if topic == MqttTopics::SWITCH_CLOSE_STATE && payload == MqttPayloads::SWITCH_ON.as_bytes() {
             return StateEnum::Closing(ClosingState);
         }
         StateEnum::Open(OpenState)
@@ -275,23 +276,6 @@ mod tests {
         assert_eq!(published[2], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPEN.to_string()));
     }
     #[test]
-    fn test_open_to_closing() {
-        // Create a MockClient
-        let mock_client = Arc::new(MockClient::new());
-        let mock_client_clone = mock_client.clone();
-
-        // Create a Box<dyn Client> from MockClient
-        let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
-        let mut event_handler = MqttEventHandler::new(boxed_client);
-        event_handler.change_state(StateEnum::Open(OpenState));
-        event_handler.publish_state();
-        event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_CLOSE.as_bytes());
-        let published = mock_client.published.lock().unwrap();
-        assert_eq!(published.len(), 3); // state_open, state_closing, state_closing
-        assert_eq!(published[1], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSING.to_string()));
-        assert_eq!(published[2], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSING.to_string()));
-    }
-    #[test]
     fn test_closing_to_close() {
          // Create a MockClient
          let mock_client = Arc::new(MockClient::new());
@@ -355,6 +339,41 @@ mod tests {
         match &event_handler.state {
             StateEnum::Opening(_) => {} // OK
             _ => panic!("State should be OpeningState"),
+        }
+    }
+    #[test]
+    fn test_open_state_process_message_behavior() {
+        // Create a MockClient
+        let mock_client = Arc::new(MockClient::new());
+        let mock_client_clone = mock_client.clone();
+
+        // Create a Box<dyn Client> from MockClient
+        let boxed_client: Box<dyn Client> = Box::new((*mock_client_clone).clone());
+        let mut event_handler = MqttEventHandler::new(boxed_client);
+        // Set state to OpenState
+        event_handler.change_state(StateEnum::Open(OpenState));
+        event_handler.publish_state(); // Publish initial state
+
+        // 1. Send COVER_COMMAND/COMMAND_CLOSE, should publish to SWITCH_CLOSE_COMMAND/SWITCH_ON
+        event_handler.process_message(MqttTopics::COVER_COMMAND, MqttPayloads::COMMAND_CLOSE.as_bytes());
+        let published = mock_client.published.lock().unwrap();
+        // The first message is the initial publish_state (STATE_OPEN)
+        assert_eq!(published[0], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPEN.to_string()));
+        // The second message should be SWITCH_CLOSE_COMMAND/SWITCH_ON
+        assert_eq!(published[1], (MqttTopics::SWITCH_CLOSE_COMMAND.to_string(), MqttPayloads::SWITCH_ON.to_string()));
+        // The third message should be publish_state (still STATE_OPEN)
+        assert_eq!(published[2], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_OPEN.to_string()));
+        drop(published);
+
+        // 2. Send SWITCH_CLOSE_STATE/SWITCH_ON, should transition to ClosingState and publish state_closing
+        event_handler.process_message(MqttTopics::SWITCH_CLOSE_STATE, MqttPayloads::SWITCH_ON.as_bytes());
+        let published = mock_client.published.lock().unwrap();
+        // The last message should be COVER_STATE/STATE_CLOSING
+        assert_eq!(published[3], (MqttTopics::COVER_STATE.to_string(), MqttPayloads::STATE_CLOSING.to_string()));
+        // After this, the state should be ClosingState
+        match &event_handler.state {
+            StateEnum::Closing(_) => {} // OK
+            _ => panic!("State should be ClosingState"),
         }
     }
 }
