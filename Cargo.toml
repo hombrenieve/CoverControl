@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 ctrlc = "3.4.7"
 paho-mqtt = "0.13.2"
+tokio = { version = "1.45.1", features = ["full"] }
