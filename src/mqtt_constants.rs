@@ -13,6 +13,9 @@ impl MqttTopics {
     // Topics for the close switch
     pub const SWITCH_CLOSE_STATE: &'static str = "switch/close/state";
     pub const SWITCH_CLOSE_COMMAND: &'static str = "switch/close/command";
+
+    // Fake topic for the timer
+    pub const TIMER_TOPIC: &'static str = "timer/cover";
 }
 
 impl MqttPayloads {
@@ -35,4 +38,7 @@ impl MqttPayloads {
     // Availability payloads
     pub const AVAILABILITY_ONLINE: &'static str = "online";
     pub const AVAILABILITY_OFFLINE: &'static str = "offline";
+
+    // Timer payloads
+    pub const TIMER_EXPIRES: &'static str = "expires";
 }

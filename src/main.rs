@@ -5,6 +5,8 @@ use mqtt_events::{MqttEventHandler, Client};
 use paho_mqtt as mqtt;
 use std::time::Duration;
 use std::sync::{Arc, Mutex};
+use tokio::sync::mpsc;
+use tokio::runtime::Runtime;
 
 fn main() {
     // Create a client for the mqtt protocol.
@@ -21,15 +23,17 @@ fn main() {
     
     // We need to Box the real client to pass it to MqttEventHandler
     let boxed_client: Box<dyn Client> = Box::new(client.clone());
-    // Create the event_handler and pass it the boxed client.
-    let event_handler = MqttEventHandler::new(boxed_client);
-    
-    if let Err(err) = event_handler.initialize(){
+    let mut event_handler = MqttEventHandler::new(boxed_client);
+
+    // Create a channel for timer events
+    let (timer_tx, mut timer_rx) = mpsc::channel::<(String, Vec<u8>)>(8);
+    event_handler.set_timer_sender(timer_tx);
+
+    if let Err(err) = event_handler.initialize() {
         eprintln!("Error initializing MqttEventHandler: {}", err);
         return;
     }
 
-    // Create an Arc<Mutex<_>> to share event_handler with the signal handler
     let event_handler = Arc::new(Mutex::new(event_handler));
     let event_handler_clone = event_handler.clone();
 
@@ -44,9 +48,21 @@ fn main() {
         std::process::exit(0);
     }).expect("Error setting Ctrl-C handler");
 
-    let rx = client.start_consuming();    
+    let rx = client.start_consuming();
     println!("Waiting for messages...\n");
-    
+
+    // Use a tokio runtime for async tasks
+    let rt = Runtime::new().unwrap();
+    let event_handler_for_timer = event_handler.clone();
+    rt.spawn(async move {
+        while let Some((topic, payload)) = timer_rx.recv().await {
+            if let Ok(mut handler) = event_handler_for_timer.lock() {
+                handler.process_message(&topic, &payload);
+            }
+        }
+    });
+
+    // Main loop remains synchronous
     while let Ok(msg) = rx.recv() {
         if let Some(msg) = msg {
             if let Ok(mut handler) = event_handler.lock() {
