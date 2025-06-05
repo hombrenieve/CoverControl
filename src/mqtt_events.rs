@@ -123,10 +123,29 @@ impl State for OpeningState {
             if let Some(cancel_flag) = &handler.timer_cancel {
                 cancel_flag.store(true, Ordering::SeqCst);
             }
-            let _ = client.publish(
-                mqtt::Message::new(MqttTopics::COVER_STATE, MqttPayloads::STATE_CLOSE, 1)
-            );
-            return StateEnum::Close(CloseState);
+        }
+        if topic == MqttTopics::SWITCH_CLOSE_STATE && payload == MqttPayloads::SWITCH_ON.as_bytes() {
+            // cancel the timer if it exists
+            if let Some(cancel_flag) = &handler.timer_cancel {
+                cancel_flag.store(true, Ordering::SeqCst);
+            }
+            let cancel_flag = Arc::new(AtomicBool::new(false));
+            handler.timer_cancel = Some(cancel_flag.clone());
+            if let Some(tx) = handler.timer_tx.as_ref() {
+                let tx = tx.clone();
+                let duration = handler.timer_duration;
+                println!("DEBUG: Spawning timer in OpeningState for {:?}", duration);
+                tokio::spawn(async move {
+                    sleep(duration).await;
+                    if !cancel_flag.load(Ordering::SeqCst) {
+                        println!("DEBUG: Timer fired in OpeningState");
+                        let _ = tx.send((MqttTopics::TIMER_TOPIC.to_string(), MqttPayloads::TIMER_EXPIRES.as_bytes().to_vec())).await;
+                    } else {
+                        println!("DEBUG: Timer canceled in OpeningState");
+                    }
+                });
+            }
+            return StateEnum::Closing(ClosingState);
         }
         if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_STOP.as_bytes() {
             // stop the opening process
@@ -152,10 +171,29 @@ impl State for ClosingState {
             if let Some(cancel_flag) = &handler.timer_cancel {
                 cancel_flag.store(true, Ordering::SeqCst);
             }
-            let _ = client.publish(
-                mqtt::Message::new(MqttTopics::COVER_STATE, MqttPayloads::STATE_OPEN, 1)
-            );
-            return StateEnum::Open(OpenState);
+        }
+        if topic == MqttTopics::SWITCH_OPEN_STATE && payload == MqttPayloads::SWITCH_ON.as_bytes() {
+            // cancel the timer if it exists
+            if let Some(cancel_flag) = &handler.timer_cancel {
+                cancel_flag.store(true, Ordering::SeqCst);
+            }
+            let cancel_flag = Arc::new(AtomicBool::new(false));
+            handler.timer_cancel = Some(cancel_flag.clone());
+            if let Some(tx) = handler.timer_tx.as_ref() {
+                let tx = tx.clone();
+                let duration = handler.timer_duration;
+                println!("DEBUG: Spawning timer in CloseState for {:?}", duration);
+                tokio::spawn(async move {
+                    sleep(duration).await;
+                    if !cancel_flag.load(Ordering::SeqCst) {
+                        println!("DEBUG: Timer fired in CloseState");
+                        let _ = tx.send((MqttTopics::TIMER_TOPIC.to_string(), MqttPayloads::TIMER_EXPIRES.as_bytes().to_vec())).await;
+                    } else {
+                        println!("DEBUG: Timer canceled in CloseState");
+                    }
+                });
+            }
+            return StateEnum::Opening(OpeningState);
         }
         if topic == MqttTopics::COVER_COMMAND && payload == MqttPayloads::COMMAND_STOP.as_bytes() {
             // stop the closing process
